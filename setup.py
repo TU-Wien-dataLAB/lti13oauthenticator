@@ -25,7 +25,7 @@ here = os.path.abspath(os.path.dirname(__file__))
 
 # Get the current package version.
 version_ns = {}
-with open(os.path.join(here, 'oauthenticator', '_version.py')) as f:
+with open(os.path.join(here, 'lti13oauthenticator', '_version.py')) as f:
     exec(f.read(), {}, version_ns)
 
 setup_args = dict(
