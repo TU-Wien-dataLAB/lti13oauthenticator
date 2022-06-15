@@ -57,13 +57,7 @@ setup_args = dict(
     ],
 )
 
-setup_args['install_requires'] = install_requires = []
-with open('requirements.txt') as f:
-    for line in f.readlines():
-        req = line.strip()
-        if not req or req.startswith(('-e', '#')):
-            continue
-        install_requires.append(req)
+setup_args['install_requires'] = ["jupyterhub>=0.5","oauthenticator>0.12","pyjwt"]
 
 def main():
     setup(**setup_args)
