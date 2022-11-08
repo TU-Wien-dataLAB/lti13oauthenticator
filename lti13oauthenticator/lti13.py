@@ -13,7 +13,6 @@ from traitlets.config import LoggingConfigurable
 from traitlets import Unicode, Bool, Union
 from oauthenticator.traitlets import Callable
 
-
 from oauthenticator.oauth2 import OAuthenticator
 from oauthenticator.oauth2 import guess_callback_uri
 from oauthenticator.oauth2 import OAuthLoginHandler
@@ -37,15 +36,15 @@ class LTI13LoginHandler(OAuthLoginHandler):
         to redirect users to the authorization url.
         """
 
-        #redirect_uri = guess_callback_uri('http', self.request.host, self.hub.server.base_url)
+        # redirect_uri = guess_callback_uri('http', self.request.host, self.hub.server.base_url)
         redirect_uri = self.authenticator.get_callback_url(self)
         self.log.info('redirect_uri: %r', redirect_uri)
         state = self.get_state()
         self.set_state_cookie(state)
-        
+
         # TODO: validate that received nonces haven't been received before
         # and that they are within the time-based tolerance window
-        
+
         nonce_raw = hashlib.sha256(state.encode())
         extra_params = {}
         extra_params['nonce'] = nonce_raw.hexdigest()
@@ -54,13 +53,13 @@ class LTI13LoginHandler(OAuthLoginHandler):
         extra_params['prompt'] = 'none'
         extra_params['login_hint'] = login_hint
         extra_params['lti_message_hint'] = lti_message_hint
-        
+
         self.authorize_redirect(
-            redirect_uri = redirect_uri,
-            client_id = self.authenticator.client_id,
-            scope = self.authenticator.scope,
-            extra_params = extra_params,
-            response_type = 'id_token',
+            redirect_uri=redirect_uri,
+            client_id=self.authenticator.client_id,
+            scope=self.authenticator.scope,
+            extra_params=extra_params,
+            response_type='id_token',
         )
 
     def post(self):
@@ -69,13 +68,14 @@ class LTI13LoginHandler(OAuthLoginHandler):
         lti_message_hint = self.get_argument('lti_message_hint')
 
         self._process_login_request(iss, login_hint, lti_message_hint)
-        
+
     def get(self):
         iss = self.get_argument('iss')
         login_hint = self.get_argument('login_hint')
         lti_message_hint = self.get_argument('lti_message_hint')
 
         self._process_login_request(iss, login_hint, lti_message_hint)
+
 
 class LTI13CallbackHandler(OAuthCallbackHandler):
     """
@@ -98,7 +98,7 @@ class LTI13CallbackHandler(OAuthCallbackHandler):
             raise HTTPError(403, 'User missing or null')
         self.log.debug('Redirecting user %s to %s' % (user.id, self.get_next_url(user)))
         self.redirect(self.get_next_url(user))
-        
+
 
 class LTI13OAuthenticator(OAuthenticator):
     """Authenticator used with LTI 1.3 requests"""
@@ -108,7 +108,6 @@ class LTI13OAuthenticator(OAuthenticator):
     # handlers used for login, callback, and jwks endpoints
     login_handler = LTI13LoginHandler
     callback_handler = LTI13CallbackHandler
-
 
     jwks_endpoint = Unicode(
         os.environ.get('OAUTH2_JWKS_ENDPOINT', ''),
@@ -156,7 +155,7 @@ class LTI13OAuthenticator(OAuthenticator):
         return AsyncHTTPClient(force_instance=True, defaults=dict(validate_cert=self.tls_verify))
 
     async def authenticate(
-        self, handler: LTI13LoginHandler, data: Dict[str, str] = None
+            self, handler: LTI13LoginHandler, data: Dict[str, str] = None
     ) -> Dict[str, str]:
         """
         Overrides authenticate from base class to handle LTI 1.3 authentication requests.
@@ -168,16 +167,16 @@ class LTI13OAuthenticator(OAuthenticator):
         Returns:
           Authentication dictionary
         """
-        
-        id_token = handler.get_argument('id_token') 
+
+        raw_id_token = handler.get_argument('id_token')
         # get signing key id
-        kid = jwt.get_unverified_header(id_token)['kid'] 
-        
+        kid = jwt.get_unverified_header(raw_id_token)['kid']
+
         if self.jwk_verify:
             # get jwks endpoint and token to use as args to decode jwt.
             http_client = self.http_client()
             resp = await http_client.fetch(self.jwks_endpoint)
-            
+
             jwks = json.loads(resp.body)
             self.log.debug('Retrieved jwks from lms platform %s' % jwks)
 
@@ -195,11 +194,11 @@ class LTI13OAuthenticator(OAuthenticator):
                 error_msg = f'There is not a key matching in the platform jwks for the jwt received. kid: {kid}'
                 raise ValueError(error_msg)
 
-        id_token = jwt.decode(id_token, key=key, verify=self.jwk_verify, audience=self.client_id, algorithms=['RS256'])
+        id_token = jwt.decode(raw_id_token, key=key, verify=self.jwk_verify, audience=self.client_id,
+                              algorithms=['RS256'])
 
         self.log.debug('Decoded JWT is %s' % id_token)
 
-        
         if callable(self.username_key):
             name = self.username_key(id_token)
         else:
@@ -211,6 +210,8 @@ class LTI13OAuthenticator(OAuthenticator):
                 return
 
         course_id = id_token['https://purl.imsglobal.org/spec/lti/claim/context']['label']
+        course_id = course_id.replace(" ", "")
+
         self.log.debug('Normalized course label is %s' % course_id)
 
         # set role to learner role if instructor roles is not sent with the request
@@ -219,11 +220,16 @@ class LTI13OAuthenticator(OAuthenticator):
             if role.find('Instructor') >= 1:
                 user_role = 'Instructor'
                 break
-        
+
+        role = "student" if user_role == "Learner" else "instructor"
+        groups = [f"{course_id}:{role}"]
+        if role == "instructor":
+            groups.append("ltisync")
+
         self.log.debug('user_role is %s' % user_role)
 
         lms_user_id = id_token.get('sub', '')
-        
+
         # Values for the send-grades functionality
         course_lineitems = []
         if 'https://purl.imsglobal.org/spec/lti-ags/claim/endpoint' in id_token:
@@ -231,14 +237,15 @@ class LTI13OAuthenticator(OAuthenticator):
                 'lineitems'
             )
 
-
         return {
             'name': name,
+            'groups': groups,
             'auth_state': {
                 'course_id': course_id,
                 'user_role': user_role,
                 'course_lineitems': course_lineitems,
                 'lms_user_id': lms_user_id,
-                'id_token': id_token
+                'id_token': id_token,
+                'raw_id_token': raw_id_token,
             },
         }
