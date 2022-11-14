@@ -245,7 +245,6 @@ class LTI13OAuthenticator(OAuthenticator):
                 'user_role': user_role,
                 'course_lineitems': course_lineitems,
                 'lms_user_id': lms_user_id,
-                'id_token': id_token,
-                'raw_id_token': raw_id_token,
+                'id_token': id_token
             },
         }
